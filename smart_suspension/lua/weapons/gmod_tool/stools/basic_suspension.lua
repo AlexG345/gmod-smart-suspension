@@ -314,7 +314,7 @@ end
 function TOOL:Holster()
 
 	self:ClearObjects()
-	if !SERVER then return true end
+	if CLIENT then return true end
 	
 	local ply = self:GetOwner()
     
@@ -329,98 +329,158 @@ function TOOL:Holster()
 end
 
 
-local function getVectorDisplayData2D(originPos, vector, start_multiplier, end_multiplier)
-	local lineP1Data2D	= (originPos + vector * start_multiplier):ToScreen()
-	local lineP2Data2D	= (originPos + vector * end_multiplier):ToScreen()
-	return lineP1Data2D, lineP2Data2D
-end
 
--- Not sure how to do this properly.
-function TOOL:DrawHUD()
-	
-	if SERVER then return false end
-	
-	local stage = self:GetStage()
-	
-	if stage < 1 then return true end
-	
-	
-	local ply = self:GetOwner()
-	local baseEnt = ply:GetNW2Entity(mode.."_ent1")
-	if !baseEnt:IsValid() then return false end
-	
-	-- Draw the indicator for the vehicle base.
-	local ent_textcolor	= Color( 255, 240, 220 )
-	local black	= Color(0, 0, 0)
-	local white = Color(255, 255, 255)
-	local baseCenterPos	= baseEnt:LocalToWorld( baseEnt:OBBCenter() )
-	local baseData2D	= baseCenterPos:ToScreen()
-	if baseData2D.visible then draw.SimpleTextOutlined( "Vehicle entity", "Default", baseData2D.x, baseData2D.y, ent_textcolor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, black ) end
-	
-	
-	
-	if stage < 2 then return true end
-	
-	local zvec = ply:GetNW2Vector(mode.."_zvec") -- Should verify if this vector is valid.
-	
-	if stage == 2 then 		-- Draw the vector normal to the top of the vehicle
-		lineP1Data2D, lineP2Data2D = getVectorDisplayData2D(baseCenterPos, zvec, 5, 50)
-		if lineP1Data2D.visible || lineP2Data2D.visible then
-			surface.SetDrawColor( Color(255, 255, 255) )
-			surface.DrawLine( lineP1Data2D.x, lineP1Data2D.y, lineP2Data2D.x, lineP2Data2D.y)
-			draw.SimpleTextOutlined( "TOP", "Default", lineP2Data2D.x, lineP2Data2D.y, white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, black )
+if CLIENT then
+
+
+	local function getVectorDisplayData2D(originPos, vector, start_multiplier, end_multiplier)
+		local p1_Scr	= (originPos + vector * start_multiplier):ToScreen()
+		local p2_Scr	= (originPos + vector * end_multiplier):ToScreen()
+		return p1_Scr, p2_Scr
+	end
+
+
+	-- converts travel distance to arc angle in suspension context
+	local function zDistToAngle(length, radius)
+		return math.acos(math.Clamp(1 - (length * length) / (2 * radius * radius), -1, 1))
+	end
+
+	-- converts the upper and lower extension to a angular range
+	local function getSuspensionArcRange( upDist, downDist, radius )
+		local upAngle = zDistToAngle( upDist, radius)
+		local downAngle = zDistToAngle( downDist, radius)
+		return -downAngle, upAngle
+	end
+
+	-- custom polar-to-cartesian conversion
+	local function getSuspensionArcPoint( center, yvec, zvec, radius, angle )
+		return center + radius * ( yvec * math.cos( angle ) + zvec * math.sin( angle ) )
+	end
+
+	-- for 2 ropes slider
+	function TOOL:drawSuspensionArc( pos, yvec, zvec, radius, upDist, downDist, segments, color )
+		color = color or Color( 0, 114, 178 )
+		segments = segments or 16
+		radius = radius or 40
+
+		local center	= pos - yvec * radius
+		local p0_scr = center:ToScreen()
+		local arcStart, arcEnd = getSuspensionArcRange( upDist, downDist, radius )
+		local angleStep = ( arcEnd - arcStart ) / segments
+
+		for i = 0, segments - 1 do
+			local ang = arcStart + i * angleStep
+
+			local p1 = getSuspensionArcPoint( center, yvec, zvec, radius, ang )
+			local p2 = getSuspensionArcPoint( center, yvec, zvec, radius, ang + angleStep )
+
+			local p1_scr = p1:ToScreen()
+			local p2_scr = p2:ToScreen()
+
+			if ( p1_scr.visible or p2_scr.visible ) then
+				surface.SetDrawColor( color )
+				surface.DrawLine( p1_scr.x, p1_scr.y, p2_scr.x, p2_scr.y )
+				surface.DrawLine( p0_scr.x, p0_scr.y, p1_scr.x, p1_scr.y )
+				surface.DrawLine( p0_scr.x, p0_scr.y, p2_scr.x, p2_scr.y )
+			end
 		end
+
 	end
+
+
+	-- Not sure how to do this properly.
+	function TOOL:DrawHUD()
+		
+		local stage = self:GetStage()
+		
+		if stage < 1 then return true end
+		
+		local ply = self:GetOwner()
+		local baseEnt = ply:GetNW2Entity(mode.."_ent1")
+		if !baseEnt:IsValid() then return false end
+		
+		-- Draw the indicator for the vehicle base.
+		local ent_textcolor	= Color( 255, 240, 220 )
+		local black	= Color(0, 0, 0)
+		local white = Color(255, 255, 255)
+		local baseCenterPos	= baseEnt:LocalToWorld( baseEnt:OBBCenter() )
+		local baseData2D	= baseCenterPos:ToScreen()
+		if baseData2D.visible then draw.SimpleTextOutlined( "Vehicle entity", "Default", baseData2D.x, baseData2D.y, ent_textcolor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, black ) end
+		
+		
+		
+		if stage < 2 then return true end
+		
+		local zvec = ply:GetNW2Vector(mode.."_zvec") -- Should verify if this vector is valid.
+		
+		if stage == 2 then 		-- Draw the vector normal to the top of the vehicle
+			p1_Scr, p2_Scr = getVectorDisplayData2D(baseCenterPos, zvec, 5, 50)
+			if p1_Scr.visible || p2_Scr.visible then
+				surface.SetDrawColor( Color(255, 255, 255) )
+				surface.DrawLine( p1_Scr.x, p1_Scr.y, p2_Scr.x, p2_Scr.y)
+				draw.SimpleTextOutlined( "TOP", "Default", p2_Scr.x, p2_Scr.y, white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, black )
+			end
+		end
+		
+		
+		
+		if stage < 3 then return true end
+		
+		-- Draw the suspension position and direction indicators
+		
+		local susPos	= ply:GetNW2Vector(mode.."_suspension_pos") -- Should verify if this vector is valid.
+		local susPosScr	= susPos:ToScreen()
+		
+		if susPosScr.visible then surface.DrawCircle(susPosScr.x, susPosScr.y, 8, Color(225, 100, 190)) end
+		
+		local playerDistance = (susPos - ply:EyePos()):Length()
+
+		local upDist, lowDist = self:GetClientNumber("limitrope_upper_dist"), self:GetClientNumber("limitrope_lower_dist")
+		local suspensionAxis = zvec
+		local p1_Scr, p2_Scr = getVectorDisplayData2D(susPos, suspensionAxis, -lowDist, upDist)
+		
+		if p1_Scr.visible or p2_Scr.visible then
+			surface.SetDrawColor( Color(0, 158, 115) )
+			surface.DrawLine( p1_Scr.x, p1_Scr.y, p2_Scr.x, p2_Scr.y)
+			draw.SimpleTextOutlined( "Suspension (UP)", "Default", p2_Scr.x, p2_Scr.y, white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, black )
+		end
+		
+		-- Draw the wheel entity
+		
+		local wheelEnt = ply:GetNW2Entity(mode.."_ent2")
+		if wheelEnt:IsValid() then
+			local wheelData2D = ( wheelEnt:LocalToWorld( wheelEnt:OBBCenter() ) ):ToScreen()
+			if wheelData2D.visible then draw.SimpleTextOutlined( "Wheel entity", "Default", wheelData2D.x, wheelData2D.y, ent_textcolor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, black ) end
+		end
+		
+		-- If we don't add a ballsocket, we can stop here (we don't need to show the rotation axis of the wheel)
+		
+		if !self:GetClientBool( "add_ballsocket" ) then return true end
+		
+		-- Draw the wheel axis indicator, if possible.
+		
+		local eyeTrace = ply:GetEyeTrace()
+		if !eyeTrace.Hit then return true end
+		
+
+		if self:GetClientNumber("ropeslider_type") == 2 then
+			local radius = self:GetClientNumber("two_rope_offx")
+			self:drawSuspensionArc( susPos, eyeTrace.HitNormal, zvec, radius, upDist, lowDist )
+		end
+
+		local rotationAxis	= eyeTrace.HitNormal * 0.25 * math.Clamp(20, playerDistance, 1000) -- This is the normal vector of the surface the player is looking at, multiplied by player distance
+		p1_Scr, p2_Scr = getVectorDisplayData2D(susPos, rotationAxis, -0.1, 1)
+		if p1_Scr.visible || p2_Scr.visible then
+			surface.SetDrawColor( Color( 240, 228, 66 ) )
+			surface.DrawLine( p1_Scr.x, p1_Scr.y, p2_Scr.x, p2_Scr.y)
+			draw.SimpleTextOutlined( "Wheel Rotation Axis", "Default", p2_Scr.x, p2_Scr.y, white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, black )
+		end
+		
+		return true
 	
-	
-	
-	if stage < 3 then return true end
-	
-	-- Draw the suspension position and direction indicators
-	
-	local suspensionPos		= ply:GetNW2Vector(mode.."_suspension_pos") -- Should verify if this vector is valid.
-	local suspensionData2D	= suspensionPos:ToScreen()
-	
-	if suspensionData2D.visible then surface.DrawCircle(suspensionData2D.x, suspensionData2D.y, 10, Color(200, 0, 0)) end
-	
-	local playerDistance = (suspensionPos - ply:EyePos()):Length()
-	local suspensionAxis = zvec * 0.3 * math.Clamp(20, playerDistance, 1000)
-	local lineP1Data2D, lineP2Data2D = getVectorDisplayData2D(suspensionPos, suspensionAxis, 0, 1)
-	
-	if lineP1Data2D.visible || lineP2Data2D.visible then
-		surface.SetDrawColor( Color(255, 255, 255) )
-		surface.DrawLine( lineP1Data2D.x, lineP1Data2D.y, lineP2Data2D.x, lineP2Data2D.y)
-		draw.SimpleTextOutlined( "Suspension Direction", "Default", lineP2Data2D.x, lineP2Data2D.y, white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, black )
 	end
-	
-	-- Draw the wheel entity
-	
-	local wheelEnt = ply:GetNW2Entity(mode.."_ent2")
-	if wheelEnt:IsValid() then
-		local wheelData2D = ( wheelEnt:LocalToWorld( wheelEnt:OBBCenter() ) ):ToScreen()
-		if wheelData2D.visible then draw.SimpleTextOutlined( "Wheel entity", "Default", wheelData2D.x, wheelData2D.y, ent_textcolor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, black ) end
-	end
-	
-	 -- If we don't add a ballsocket, we can stop here (we don't need to show the rotation axis of the wheel)
-	
-	if !self:GetClientBool( "add_ballsocket" ) then return true end
-	
-	-- Draw the wheel axis indicator, if possible.
-	
-	local eyeTrace = ply:GetEyeTrace()
-	if !eyeTrace.Hit then return true end
-	
-	local rotationAxis	= eyeTrace.HitNormal * 0.25 * math.Clamp(20, playerDistance, 1000) -- This is the normal vector of the surface the player is looking at, multiplied by player distance
-	lineP1Data2D, lineP2Data2D = getVectorDisplayData2D(suspensionPos, rotationAxis, -1, 1)
-	
-	if lineP1Data2D.visible || lineP2Data2D.visible then
-		surface.SetDrawColor( Color( 255, 0, 0 ) )
-		surface.DrawLine( lineP1Data2D.x, lineP1Data2D.y, lineP2Data2D.x, lineP2Data2D.y)
-		draw.SimpleTextOutlined( "Wheel Rotation Axis", "Default", lineP2Data2D.x, lineP2Data2D.y, white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, black )
-	end
-	
-	return true
-	
+
+
 end
 
 
