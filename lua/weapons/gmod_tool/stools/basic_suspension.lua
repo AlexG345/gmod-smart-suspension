@@ -9,6 +9,7 @@ TOOL.ClientConVar[ "ropeslider_type" ]		= "1"
 TOOL.ClientConVar[ "pos_type" ]				= "1"
 TOOL.ClientConVar[ "two_rope_offx" ]		= "500"
 TOOL.ClientConVar[ "two_rope_offy" ]		= "500"
+TOOL.ClientConVar[ "four_rope_length" ]		= "150000"
 
 TOOL.ClientConVar[ "add_limitrope" ]		= "1"
 TOOL.ClientConVar[ "limitrope_upper_dist" ]	= "24"
@@ -35,7 +36,6 @@ TOOL.ClientConVar[ "rope_color_g" ]			= "255"
 TOOL.ClientConVar[ "rope_color_b" ]			= "255"
 
 TOOL.ClientConVar[ "sound" ]				= "1"
-
 
 TOOL.Information = {
 	{ name = "left", stage = 0 },
@@ -69,6 +69,149 @@ end
 
 if SERVER then
 
+	function makeFourRopesSlider(ent1, ent2, bone1, bone2, pos1, dirVectors, length, width, material, color) -- Returns a table of 4 rope constraints
+			
+			local slider = {}
+			local xvec, yvec = dirVectors[1], dirVectors[2]
+			local offsetDirections = { xvec, -xvec, yvec, -yvec }
+			
+			for _, direction in pairs( offsetDirections ) do
+				
+				local pos2 = pos1 + direction * length
+				
+				local localPos1 = ent1:WorldToLocal( pos1 )
+				local localPos2 = ent2:WorldToLocal( pos2 )
+				
+				local ent1Pos, ent2Pos = ent1:GetPos(), ent2:GetPos()
+				ent1:SetPos( vector_origin )
+				ent2:SetPos( ent2Pos - ent1Pos )
+				
+				local constr = constraint.Rope(ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, true, color)
+				table.insert( slider, constr )
+
+				ent1:SetPos( ent1Pos )
+				ent2:SetPos( ent2Pos )
+			
+			end
+			
+			return slider
+			
+	end
+
+
+	function makeTwoRopesSlider(ent1, ent2, bone1, bone2, pos1, dirVectors, offsetX, offsetY, width, material, color) -- Returns a table of 2 rope constraints
+			
+			local slider = {}
+			local xvec, yvec = dirVectors[1], dirVectors[2]
+			local offsetYDirections = { yvec, -yvec }
+			
+			for _, yDirection in pairs( offsetYDirections ) do
+				
+				local pos2 = pos1 - ( xvec * offsetX ) + ( yDirection * offsetY )
+				local length = ( pos2 - pos1 ):Length()
+				
+				local localPos1 = ent1:WorldToLocal(pos1)
+				local localPos2 = ent2:WorldToLocal(pos2)
+				
+				local constr = constraint.Rope(ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, true, color)
+				table.insert( slider, constr )
+			
+			end
+			
+			return slider
+			
+	end
+
+
+
+	function makeLimitRope(ent1, ent2, bone1, bone2, pos, dirVectors, lowerDistance, upperDistance, width, material, color) -- Returns a rope constraint
+		
+		local xvec, zvec = dirVectors[1], dirVectors[3]
+		local pos1		= pos + xvec * 5 -- This rope causes problems such as suspension locking, offsetting the rope along xvec helps fix this issue.
+		
+		local posDiff	= zvec * ( upperDistance - lowerDistance ) / 2
+		local pos2 		= pos1 + posDiff
+		
+		local length	= math.abs( upperDistance + lowerDistance ) / 2
+		
+		local localPos1	= ent1:WorldToLocal( pos1 )
+		local localPos2	= ent2:WorldToLocal( pos2 )
+		
+		return constraint.Rope(ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, false, color)
+		
+	end
+
+
+	-- rotationAxis is the spin axis of the wheel.
+	function makeElastic(ent1, ent2, bone1, bone2, pos, rotationAxis, offsetX, constant, damping, rdamping, width, material, color) -- Returns an elastic constraint whose local positions are the same world positions
+		
+		local elastic_pos	= pos + offsetX * rotationAxis -- The limit rope causes problems such as suspension locking, offsetting the elastic along xvec helps fix this issue.
+		
+		local localPos1		= ent1:WorldToLocal( elastic_pos )
+		local localPos2		= ent2:WorldToLocal( elastic_pos )
+		
+		return constraint.Elastic(ent1, ent2, bone1, bone2, localPos1, localPos2, constant, damping, rdamping, material, width, false, color)
+		
+	end
+
+
+	function makeRotationLimitingAdvBallsocket(ent1, ent2, bone1, bone2, rotationAxis, friction, nocollide)
+		
+		-- ent1 will only be able to turn along rotationAxis relative to ent2.
+		local rotAxisAngle	= rotationAxis:Angle()
+		
+		-- The only way I found to rotate the entities the same amount was to use this function, Euler Angles addition didn't work for this.
+		local newAngle1		= ent1:AlignAngles(rotAxisAngle, angle_zero)
+		local newAngle2		= ent2:AlignAngles(rotAxisAngle, angle_zero)
+		
+		-- Save the entities initial angles to restore later
+		local startAngle1 = ent1:GetAngles()
+		local startAngle2 = ent2:GetAngles()
+		
+		-- Rotate both entities
+		ent1:SetAngles(newAngle1)
+		ent2:SetAngles(newAngle2)
+		
+		-- The positions values are not very important since onlyrotation = true, but here we use the coordinates center
+		local localPos1 = ent1:WorldToLocal(ent1:GetPos())
+		local localPos2 = ent2:WorldToLocal(ent2:GetPos())
+
+		-- Create the advanced ballsocket that will limit the axis of rotation (of ent1 relative to ent2) to rotationAxis
+		local constr = constraint.AdvBallsocket(ent1, ent2, bone1, bone2, localPos1, localPos2, 0, 0, -180, -0.01, -0.01, 180, 0.01, 0.01, friction, 0, 0, 1, nocollide)
+
+		-- Restore the entities angles
+		ent1:SetAngles(startAngle1)
+		ent2:SetAngles(startAngle2)
+
+		-- Return the created constraint in case it is needed
+		return constr
+	end
+
+
+	-- Returns true if no constraints are valid in a table of constraints.
+	function noValidConstraintInTable(constraints)
+		
+		for _, constr in pairs( constraints ) do
+		
+			if IsValid(constr) then return false end
+		
+		end
+		
+		return true
+	end
+
+
+	-- Returns an arbitrary vector perpendicular to vec
+	function getPerpendicularVector( vec )
+
+		if not isvector( vec ) then return end
+		local v = vec:Cross( vector_up )
+		if not v:IsZero() then return v end
+		return vec:Cross( Vector( 1, 0, 0 ))
+
+	end
+	
+	
 	function TOOL:makeSuspension() -- Returns a table of ropeconstraints (ropes and/or elastics), but can also return an empty table.
 		
 		local ropeSlider_type	= self:GetClientNumber( "ropeslider_type" )
@@ -93,7 +236,8 @@ if SERVER then
 		local suspensionPos			= self.suspensionPos
 		 -- This type of slider uses four ropes.
 		if ropeSlider_type == 1 then
-			suspension = makeFourRopesSlider(wheelEnt, baseEnt, wheelBone, baseBone, suspensionPos, dirVectors, 150000, width, material, color)
+			local length = self:GetClientNumber( "four_rope_length" )
+			suspension = makeFourRopesSlider(wheelEnt, baseEnt, wheelBone, baseBone, suspensionPos, dirVectors, length, width, material, color)
 			
 		elseif ropeSlider_type == 2 then -- This type of slider uses two ropes.
 			local offsetX	= self:GetClientNumber("two_rope_offx")
@@ -201,17 +345,17 @@ function TOOL:LeftClick(trace)
 	if stage == 0 or stage == 2 then
 		
 		-- Some checks
-		if not IsValid(ent) then return false end
-		if ent:IsPlayer() or ent:IsWorld() then return false end
+		if not ( IsValid(ent) or ent:IsWorld() ) then return false end
+		if ent:IsPlayer() then return false end
 		if SERVER and !util.IsValidPhysicsObject(ent, trace.PhysicsBone) then return false end -- If there's no physics object then we can't constraint it! (only check on server?)
-		if stage == 2 and ent == self:GetEnt(1) then return false end -- The vehicle base can't be the wheel.
+		if stage == 2 and ( ent:IsWorld() or ent == self:GetEnt(1) ) then return false end -- The wheel can't be the vehicle base or the world
 		
 		-- Saving the entities
 		local objId = ( stage == 0 ) and 1 or 2 -- The vehicle base will be saved as Id 1, while the wheel will be saved as Id 2.
 		if SERVER then
 			ply:SetNW2Entity(mode.."_ent"..objId, ent)
 			if stage == 2 then
-				self.suspensionPos = self:getClickPosition(trace)
+				self.suspensionPos = ent:IsWorld() and trace.HitPos or self:getClickPosition(trace)
 				ply:SetNW2Vector(mode.."_suspension_pos", self.suspensionPos)
 			end
 			self:playSuccessSound()
@@ -453,10 +597,6 @@ if CLIENT then
 			if wheelData2D.visible then draw.SimpleTextOutlined( "Wheel entity", "Default", wheelData2D.x, wheelData2D.y, ent_textcolor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, black ) end
 		end
 		
-		-- If we don't add a ballsocket, we can stop here (we don't need to show the rotation axis of the wheel)
-		
-		if !self:GetClientBool( "add_ballsocket" ) then return true end
-		
 		-- Draw the wheel axis indicator, if possible.
 		
 		local eyeTrace = ply:GetEyeTrace()
@@ -467,6 +607,10 @@ if CLIENT then
 			local radius = self:GetClientNumber("two_rope_offx")
 			self:drawSuspensionArc( susPos, eyeTrace.HitNormal, zvec, radius, upDist, lowDist )
 		end
+
+		-- If we don't add a ballsocket, we can stop here (we don't need to show the rotation axis of the wheel)
+		
+		if !self:GetClientBool( "add_ballsocket" ) then return true end
 
 		local rotationAxis	= eyeTrace.HitNormal * 0.25 * math.Clamp(20, playerDistance, 1000) -- This is the normal vector of the surface the player is looking at, multiplied by player distance
 		p1_Scr, p2_Scr = getVectorDisplayData2D(susPos, rotationAxis, -0.1, 1)
@@ -518,9 +662,9 @@ function TOOL.BuildCPanel(CPanel)
 		 	-- Save now. If saved a few dozen lines below, sliderTypeFunc doesn't change the convar.
 			local sliderTypeFunc = ComboBox1["OnSelect"] -- Use a complicated name to limit risk of override ?
 			ComboBox1:SetSortItems( false )
-			ComboBox1:AddChoice("4-Ropes (straight)",	"1")
-			ComboBox1:AddChoice("2-Ropes (curved)",		"2")
-			ComboBox1:AddChoice("None (no slider)",		"3")
+			ComboBox1:AddChoice("4-Ropes (linear movement)",	"1")
+			ComboBox1:AddChoice("2-Ropes (curved movement)",	"2")
+			ComboBox1:AddChoice("None (any movement)",			"3")
 			ComboBox1:SetToolTip("Choose the type of rope slider")
 			ComboBox1:Dock(TOP)
 			Form1:ControlHelp("\nThis is the type of slider for the suspension. A 4-ropes slider moves in a straight line, while a 2-ropes slider moves in a curve.\n")
@@ -561,21 +705,42 @@ function TOOL.BuildCPanel(CPanel)
 				draw.RoundedBoxEx(8, 0, topHeight, w, h - topHeight, Color(240, 240, 240), false, false, true, true)
 			end
 
-			Form1_2:Help("The options below are for 2-ropes sliders only. \nKeep them at around the same values. Increase both to make the 2-ropes slider move less in a curve and more in a straight line.")
+			Form1_2:Help("The options below only affect 2-ropes 'sliders'. \nKeep them at around the same value for best stability.")
 
 			local NumSlider = Form1_2:NumSlider("Offset X", mode.."_two_rope_offx", 40, 2000, 2)
 				NumSlider:SetToolTip("Changes the rope X offset")
-				Form1_2:ControlHelp("Use higher numbers for a wider slider.\n" )
+				Form1_2:ControlHelp("Increase to make the slider move less in a curve and more in a straight line.\n" )
 			
 			local NumSlider = Form1_2:NumSlider("Offset Y", mode.."_two_rope_offy", 40, 2000, 2)
 				NumSlider:SetToolTip("Changes the rope Y offset")
-				Form1_2:ControlHelp("Use higher numbers for a narrower slider.\n" )
+				Form1_2:ControlHelp("Set to around the same as Offset X for best stability.\n" )
+
+
+		local Form1_3 = vgui.Create( "DForm" )
+			Form1:AddItem( Form1_3 )
+			Form1_3:SetLabel( "4-Ropes Slider settings" )
+			Form1_3:DoExpansion(false)
+			Form1_3:SetPaintBackground( false )
+			
+			function Form1_3:Paint( w, h )
+				local topHeight = self:GetHeaderHeight()
+				local c = not self:GetExpanded()
+				draw.RoundedBoxEx( 4, 0, 0, w, topHeight, Color( 50, 100, 200 ), true, true, c, c )
+				draw.RoundedBoxEx( 8, 0, topHeight, w, h - topHeight, Color( 240, 240, 240 ), false, false, true, true )
+			end
+
+			Form1_3:Help("The option below only affects 4-ropes sliders.")
+
+			local NumSlider = Form1_3:NumSlider( "Rope length", mode.."_four_rope_length", 10, 16000, 0 )
+				NumSlider:SetToolTip( "Changes the length of the slider's 4 ropes.\nThe shorter, the stiffer the suspension.\nHigh values (16000+ ?) will overflow and can actually lead to shorter ropes." )
+				Form1_3:ControlHelp( "Use higher numbers to let the suspension extend farther.\n" )
 		
 		
 		function ComboBox1:OnSelect( index, value, data )
 			if sliderTypeFunc then sliderTypeFunc( self, index, value, data ) end -- changes the convar
-			Form1_1:DoExpansion( data != "3" )
+			Form1_1:DoExpansion( data ~= "3" )
 			Form1_2:DoExpansion( data == "2" )
+			Form1_3:DoExpansion( data == "1" )
 		end
 
 	-- Suspension extension options

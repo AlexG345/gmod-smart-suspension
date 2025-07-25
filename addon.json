@@ -1,0 +1,14 @@
+{
+	"title"		:	"Smart Suspension",
+	"type"		:	"tool",
+	"tags"		:	[ "build", "fun" ],
+	"ignore"	:
+	[
+		"*.psd",
+		"*.vcproj",
+		"README.md",
+		"LICENSE",
+		"*.git",
+		"workshop images"
+	]
+}
