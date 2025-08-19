@@ -278,22 +278,26 @@ if SERVER then
 
 	end
 
-	function makeAlignedAdvBallsocket( ent1, ent2, bone1, bone2, rotationAxis, xmin, ymin, zmin, xmax, ymax, zmax, xfric, yfric, zfric, nocollide, ply )
-
-		-- ent1 will only be able to turn along rotationAxis relative to ent2.
-		local rotAxisAngle	= rotationAxis:Angle()
-
-		-- The only way I found to rotate the entities the same amount was to use this function, Euler Angles addition didn't work for this.
-		local newAngle1		= ent1:AlignAngles(rotAxisAngle, angle_zero)
-		local newAngle2		= ent2:AlignAngles(rotAxisAngle, angle_zero)
+	function makeAlignedAdvBallsocket( ent1, ent2, bone1, bone2, coordSpace, xmin, ymin, zmin, xmax, ymax, zmax, xfric, yfric, zfric, nocollide, ply )
 
 		-- Save the entities initial angles to restore later
 		local startAngle1 = ent1:GetAngles()
 		local startAngle2 = ent2:GetAngles()
 
+		local rotAxisAngle	= coordSpace[ 1 ]:Angle()
+		local susAxisAngle	= coordSpace[ 3 ]:Angle()
+
+		-- The only way I found to rotate the entities the same amount was to use this function, Euler Angles addition didn't work for this.
+		ent1:SetAngles( ent1:AlignAngles( rotAxisAngle, angle_zero ) )
+		ent2:SetAngles( ent2:AlignAngles( rotAxisAngle, angle_zero ) )
+		local angle_up		= vector_up:Angle()
+		ply:ChatPrint( tostring( susAxisAngle ) )
+		ent1:SetAngles( ent1:AlignAngles( susAxisAngle, Angle( 270, 0, 0 ) ) )
+		ent2:SetAngles( ent2:AlignAngles( susAxisAngle, Angle( 270, 0, 0 ) ) )
+
 		-- Rotate both entities
-		ent1:SetAngles(newAngle1)
-		ent2:SetAngles(newAngle2)
+		--ent1:SetAngles( newAngle1 )
+		--ent2:SetAngles( newAngle2 )
 
 		-- The positions values are not very important since onlyrotation = true, but here we use the coordinates center
 		local localPos1 = vector_origin
@@ -303,8 +307,8 @@ if SERVER then
 		local constr = makeConstrSafe( ply, "constraints", constraint.AdvBallsocket, ent1, ent2, bone1, bone2, localPos1, localPos2, 0, 0, xmin, ymin, zmin, xmax, ymax, zmax, xfric, yfric, zfric, 1, nocollide)
 
 		-- Restore the entities angles
-		ent1:SetAngles(startAngle1)
-		ent2:SetAngles(startAngle2)
+		--ent1:SetAngles(startAngle1)
+		--ent2:SetAngles(startAngle2)
 
 		-- Return the created constraint in case it is needed
 		return constr
@@ -417,7 +421,6 @@ if SERVER then
 
 		if self:GetClientBool( "abs_enabled" ) then
 
-			local friction	= self:GetClientNumber("abs_friction")
 			local nocollide	= self:GetClientNumber("abs_nocollide")
 
 			local axises = { "x", "y", "z" }
@@ -426,7 +429,8 @@ if SERVER then
 				return self:GetClientNumber( "abs_" .. axises[axisIndex] .. params[ paramIndex ] )
 			end
 
-			local constr	= makeAlignedAdvBallsocket( baseEnt, wheelEnt, baseBone, wheelBone, wheelAxisVec, f(1,1), f(2,1), f(3,1), f(1,2), f(2,2), f(3,2), f(1,3), f(2,3), f(3,3), nocollide, ply )
+			local coordSpace = { wheelAxisVec, dirVectors[ 2 ], dirVectors[ 3 ] }
+			local constr	= makeAlignedAdvBallsocket( baseEnt, wheelEnt, baseBone, wheelBone, coordSpace, f(1,1), f(2,1), f(3,1), f(1,2), f(2,2), f(3,2), f(1,3), f(2,3), f(3,3), nocollide, ply )
 			if constr then table.insert( suspension, constr ) end
 
 		end
@@ -939,6 +943,14 @@ if CLIENT then
 
 	function TOOL.BuildCPanel(CPanel)
 
+		local t = "tool." .. mode
+		local function l( ... )
+			local a = { ... }
+			if #a == 1 then table.insert( a, 1, t )
+			elseif #a < 1 then return end
+			return language.GetPhrase( a[1] .. "." .. a[2] )
+		end
+
 		local color_blue		= Color( 50, 100, 200 )
 		--local color_gray		= Color(240, 240, 240)
 
@@ -957,7 +969,6 @@ if CLIENT then
 		end
 
 		local function CatSetActive( panel, b )
-			print(panel:GetExpanded(), not b)
 			if panel:GetExpanded() and not b then
 				timer.Simple( panel:GetAnimTime(), function() panel:SetVisible( false ) end )
 			else
@@ -1139,7 +1150,7 @@ if CLIENT then
 
 			RotCTab:Help( "Options such as steering are available here." )
 
-			local RotSettForm, steerAngleSlider
+			local RotSettForm --, steerAngleSlider
 			local RotABSSliders = {}
 				local function updateRotABSSliders( ... )
 					for i, val in ipairs( { ... } ) do
@@ -1147,51 +1158,61 @@ if CLIENT then
 					end
 				end
 
-			local RotLimCheckBox = RotCTab:CheckBox( "Limit rotation", mode .. "_abs_enabled" )
+			local RotLimCheckBox = RotCTab:CheckBox( "Use advanced ballsocket", mode .. "_abs_enabled" )
 
 				function RotLimCheckBox:OnChange( bVal )
 					if RotSettForm:GetExpanded() == bVal then return end
 					CatSetActive( RotSettForm, bVal )
 				end
 
-				RotCTab:ControlHelp( "If this is checked, your wheel rotation will be limited relative to your vehicle base prop. This is done using an advanced ballsocket." )
+				RotCTab:ControlHelp( "If this is checked, your wheel rotation will be limited relative to your vehicle base prop by an advanced ballsocket." )
 
 			RotSettForm = RotCTab:Form( "Adv. ballsocket settings", color_blue, color_white )
 
+				RotSettForm:Help( "Keep in mind that the base GMod duplicator won't recreate advanced ballsockets properly most of the time." )
+
 				local RotTypeComboBox = RotSettForm:ComboBox( "Rotation presets" )
 					RotTypeComboBox:SetSortItems( false )
-					RotTypeComboBox:AddChoice( "Unlimited",		"any" )
-					RotTypeComboBox:AddChoice( "Basic spin",	"spin" )
-					RotTypeComboBox:AddChoice( "Steering",		"steer" )
+					RotTypeComboBox:Dock( TOP )
+					RotTypeComboBox:AddChoice( "Normal wheel",		"spin" )
+					RotTypeComboBox:AddChoice( "Steering wheel",	"steer" )
+					RotTypeComboBox:AddChoice( "Unlimited",			"any" )
 
 					function RotTypeComboBox:OnSelect( index, value, data )
 						if data == "any" then
 							updateRotABSSliders( -180, 180, 0, -180, 180, 0, -180, 180, 0 )
-							steerAngleSlider:SetValue( 180 )
+							--steerAngleSlider:SetValue( 180 )
 						elseif data == "spin" then
 							updateRotABSSliders( -180, 180, 0, -0.01, 0.01, 0, -0.01, 0.01, 0 )
-							steerAngleSlider:SetValue( 0.01 )
+							--steerAngleSlider:SetValue( 0.01 )
 						elseif data == "steer" then
 							local a = 35
 							updateRotABSSliders( -180, 180, 0, -0.01, 0.01, 0, -a, a, 0 )
-							steerAngleSlider:SetValue( a )
+							--steerAngleSlider:SetValue( a )
 						end
 					end
 
 				--[[
 				steerAngleSlider = RotSettForm:NumSlider( "Steering Angle", nil, 0.01, 180, 2 )
-					function steerAngleSlider:OnValueChanged( val )
+					function steerAngleSlider:OnValueChanged( val ) -- this is not always called for some reason
 						RotABSSliders[ 7 ].Scratch:SetValue( - val )
 						RotABSSliders[ 8 ].Scratch:SetValue( val )
 					end
 					RotSettForm:ControlHelp( "This is the same as changing both Z Min and Z Max, but is quicker.")
 				]]
 
-				for i, axis in ipairs( { "x", "y", "z" } ) do
-					RotABSSliders[ 3 * i - 2 ]	= RotSettForm:NumSlider( string.upper( axis ) .. " Min", mode .. "_abs_" .. axis .. "min", -180, 180, 2 )
-					RotABSSliders[ 3 * i - 1]	= RotSettForm:NumSlider( string.upper( axis ) .. " Max", mode .. "_abs_" .. axis .. "max", -180, 180, 2 )
-					RotABSSliders[ 3 * i ]		= RotSettForm:NumSlider( string.upper( axis ) .. " Friction", mode .. "_abs_" .. axis .. "fric", 0, 1000, 2 )
-					RotSettForm:ControlHelp( " " )
+				local axisInfo = {
+					x = { ord = 1, def = "The 'forward' axis settings, min / max should be set to -180 / 180." },
+					y = { ord = 2, def = "The 'tilt' axis settings, min / max should be set to -0.01 / 0.01." },
+					z = { ord = 3, def = "The 'steering' axis settings." }
+				}
+				for _, axis in ipairs( { "z", "x", "y" } ) do
+					local i = 3 * axisInfo[ axis ].ord
+					local lbl = RotSettForm:ControlHelp( axisInfo[ axis ].def )
+					lbl:DockMargin( 32, 16, 32, 8 )
+					RotABSSliders[ i - 2 ]	= RotSettForm:NumSlider( string.upper( axis ) .. " Minimum Rotation", mode .. "_abs_" .. axis .. "min", -180, 180, 2 )
+					RotABSSliders[ i - 1]	= RotSettForm:NumSlider( string.upper( axis ) .. " Maximum Rotation", mode .. "_abs_" .. axis .. "max", -180, 180, 2 )
+					RotABSSliders[ i ]		= RotSettForm:NumSlider( string.upper( axis ) .. " " .. l( "tool", "hingefriction" ), mode .. "_abs_" .. axis .. "fric", 0, 1000, 2 )
 				end
 
 				local RotColCheckBox = RotSettForm:CheckBox( "No Collide", mode .. "_abs_nocollide" )
