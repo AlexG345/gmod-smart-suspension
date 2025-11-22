@@ -6,9 +6,10 @@
 	[
 		"*.psd",
 		"*.vcproj",
-		"README.md",
-		"LICENSE",
 		"*.git",
-		"workshop images"
+		"*.svn*",
+		"workshop images*",
+		"LICENSE",
+		"README.md"
 	]
 }
