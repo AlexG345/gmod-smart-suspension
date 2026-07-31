@@ -33,7 +33,7 @@ if CLIENT then
 		tr_type					= { "linear_rope" },
 
 		tr_linear_rope_count	= { "3", 3, not game.SinglePlayer() and 4 or nil },
-		tr_linear_rope_length	= { "8000", 0.1, 16000 },
+		tr_linear_rope_length	= { "5000", 0.1, 16000 },
 		tr_curved_offx			= { "500" },
 		tr_curved_offy			= { "500" },
 		tr_width				= { "0", 0, 100 },
@@ -58,13 +58,15 @@ if CLIENT then
 		elastic_wheel_count	= { "4", 1 },
 		elastic_static_sag	= { "12", 0.1, 1000 },
 
-		rot_rope_type	= { "none" },
-		rot_rope_width	= { "0", 0, 100 },
-		rot_rope_mat	= { "cable/cable2" },
-		rot_rope_col	= { "#FFFFFF" },
+		rot_method			= { "none" },
 
-		abs_enabled		= { "1", 0, 1 },
-		abs_nocollide	= { "1", 0, 1 },
+		rot_rope_type		= { "spin" },
+		rot_rope_steer_ang	= { "35", 0, 180 },
+		rot_rope_width		= { "0", 0, 100 },
+		rot_rope_mat		= { "cable/cable2" },
+		rot_rope_col		= { "#FFFFFF" },
+
+		abs_nocollide		= { "1", 0, 1 },
 
 		sound	= { "1", 0, 1 }
 	}
@@ -101,236 +103,48 @@ if SERVER then
 	}
 
 
-	local function makeConstrSafe( ply, type, factory, ... )
-
-		type = type or "ropeconstraints"
-
-		if not ply:CheckLimit( type ) then
-
-			return false
-
-		else
-
-			local constr, rope, controller, slider = factory( ... )
-
-			if IsValid( constr ) then ply:AddCount( type, constr ) end
-
-			return constr, rope, controller, slider
-
-		end
+	function TOOL:GetClientColor( cvar )
+		local _, col = xpcall(
+			function() return HexToColor( self:GetClientInfo( cvar ) ) end,
+			function() return color_white end
+		)
+		return col
 	end
-
-	local function makeGoodRope( ply, ent1, ent2, bone1, bone2, localPos1, localPos2, length, ... )
-
-		local canMove = not ( ent1:IsWorld() or ent2:IsWorld() )
-		length = length or ( ent1:LocalToWorld( localPos1) - ent2:LocalToWorld( localPos2 ) ):Length()
-
-		local ent1Pos, ent2Pos = ent1:GetPos(), ent2:GetPos()
-		if canMove then
-			ent1:SetPos( vector_origin )
-			ent2:SetPos( ent2Pos - ent1Pos )
-		end
-
-		local constr, rope = makeConstrSafe( ply, nil, constraint.Rope, ent1, ent2, bone1, bone2, localPos1, localPos2, length, ... )
-
-		if canMove then
-			ent1:SetPos( ent1Pos )
-			ent2:SetPos( ent2Pos )
-		end
-
-		if not ( constr and IsValid( constr ) ) then return nil end
-
-		return constr, rope
-
-	end
-
-
-	function makeRopeSlider( ent1, ent2, bone1, bone2, localPos1, dirVectors, length, width, material, color, count, ply )
-
-		count = count and math.floor( count ) or 4
-		local slider = {}
-		local xVec, _, zVec = unpack( dirVectors, 1, 3 )
-		local angStep = 360 / count
-		local pos1 = ent1:LocalToWorld( localPos1 )
-
-		for i = 0, count - 1 do
-			local ang = xVec:Angle()
-			ang:RotateAroundAxis( zVec, i * angStep )
-			local direction = ang:Forward()
-			local pos2 = pos1 + direction * length
-			local localPos2 = ent2:WorldToLocal( pos2 )
-
-			local constr = makeGoodRope( ply, ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, true, color )
-			if constr == false then return slider end
-			table.insert( slider, constr )
-
-		end
-
-		return slider
-
-	end
-
-
-	function makeRopeCurver( ent1, ent2, bone1, bone2, localPos1, dirVectors, offsetX, offsetY, width, material, color, ply ) -- Returns a table of 2 rope constraints
-
-		local slider = {}
-		local xVec, yVec = dirVectors[1], dirVectors[2]
-		local offsetYDirections = { yVec, -yVec }
-		local pos1 = ent1:LocalToWorld( localPos1 )
-
-		for _, yDirection in pairs( offsetYDirections ) do
-
-			local pos2 = pos1 - ( xVec * offsetX ) + ( yDirection * offsetY )
-			local length = ( pos2 - pos1 ):Length()
-
-			local localPos2 = ent2:WorldToLocal(pos2)
-
-			local constr = makeGoodRope( ply, ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, true, color )
-			if constr == false then return slider end
-			table.insert( slider, constr )
-
-		end
-
-		return slider
-
-	end
-
-
-
-	function makeLimitRope( ent1, ent2, bone1, bone2, localPos, dirVectors, lowerDistance, upperDistance, width, material, color, ply ) -- Returns a rope constraint
-
-		local xVec, zVec = dirVectors[1], dirVectors[3]
-		local pos1		= ent1:LocalToWorld( localPos ) + xVec * 5 -- This rope causes problems such as suspension locking, offsetting the rope along xVec helps fix this issue.
-
-		local posDiff	= zVec * ( upperDistance - lowerDistance ) / 2
-		local pos2 		= pos1 + posDiff
-
-		local length	= math.abs( upperDistance + lowerDistance ) / 2
-
-		local localPos1	= ent1:WorldToLocal( pos1 )
-		local localPos2	= ent2:WorldToLocal( pos2 )
-
-		return makeConstrSafe( ply, nil, constraint.Rope, ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, false, color )
-
-	end
-
-
-	-- rotationAxis is the spin axis of the wheel.
-	function makeElastic( ent1, ent2, bone1, bone2, localPos, rotationAxis, offsetX, constant, damping, rdamping, width, material, color, ply ) -- Returns an elastic constraint whose local positions are the same world positions
-
-		local elastic_pos	= ent1:LocalToWorld( localPos ) + offsetX * rotationAxis -- The limit rope causes problems such as suspension locking, offsetting the elastic along xVec helps fix this issue.
-
-		local localPos1		= ent1:WorldToLocal( elastic_pos )
-		local localPos2		= ent2:WorldToLocal( elastic_pos )
-
-		return makeConstrSafe( ply, nil, constraint.Elastic, ent1, ent2, bone1, bone2, localPos1, localPos2, constant, damping, rdamping, material, width, false, color )
-
-	end
-
-	-- Creates a rotation-only advanced ballsocket that uses coordSpace axises instead of world axises.
-	function makeAlignedAdvBallsocket( ent1, ent2, bone1, bone2, coordSpace, xmin, ymin, zmin, xmax, ymax, zmax, xfric, yfric, zfric, nocollide, ply )
-
-		local cacheAng1	= ent1:GetAngles()
-		local cacheAng2	= ent2:GetAngles()
-
-		local curXAngle		= coordSpace[1]:Angle()
-		--local localZAngle	= ent1:WorldToLocalAngles( coordSpace[3]:Angle() )
-
-		local localPos1		= ent1:WorldToLocal( ent2:GetPos() )
-		local localZPos1	= ent1:WorldToLocal( ent1:GetPos() + coordSpace[3] * 100 )
-
-		-- This rotates both entities the same 'way'/'amount'
-		ent1:SetAngles( ent1:AlignAngles( curXAngle, angle_zero ) )
-		ent2:SetAngles( ent2:AlignAngles( curXAngle, angle_zero ) )
-
-		-- Not sure about this whole part
-		local zVec	= ent1:LocalToWorld( localZPos1 ) - ent1:GetPos()
-		curZAngle	= zVec:Angle()
-		local angle_up	= vector_up:Angle()
-		angle_up.yaw = -curZAngle.yaw
-
-		ent1:SetAngles( ent1:AlignAngles( curZAngle, angle_up ) )
-		ent2:SetAngles( ent2:AlignAngles( curZAngle, angle_up ) )
-
-		--ent2:SetPos( ent1:LocalToWorld( localPos1 ) )
-
-		-- The positions values are not very important since onlyrotation = true, but here we use the coordinates center
-		local localPos1 = vector_origin
-		local localPos2 = vector_origin
-
-		-- Create the advanced ballsocket that will limit the axis of rotation (of ent1 relative to ent2) to rotationAxis
-		local constr = makeConstrSafe( ply, "constraints", constraint.AdvBallsocket, ent1, ent2, bone1, bone2, localPos1, localPos2, 0, 0, xmin, ymin, zmin, xmax, ymax, zmax, xfric, yfric, zfric, 1, nocollide)
-
-		-- Restore the entities angles
-		ent1:SetAngles( cacheAng1 )
-		ent2:SetAngles( cacheAng2 )
-
-		return constr
-	end
-
-
-	-- Returns true if no constraints are valid in a table of constraints.
-	function noValidConstraintInTable(constraints)
-
-		for _, constr in pairs( constraints ) do
-
-			if IsValid(constr) then return false end
-
-		end
-
-		return true
-	end
-
-
-	-- Returns an arbitrary vector perpendicular to vec
-	function getPerpendicularVector( vec )
-
-		if not isvector( vec ) then return end
-		local v = vec:Cross( vector_up )
-		if not v:IsZero() then return v end
-		return vec:Cross( Vector( 1, 0, 0 ) )
-
-	end
-
 
 	function TOOL:makeSuspension() -- Returns a table of ropeconstraints (ropes and/or elastics), but can also return an empty table.
 
-		local travelType	= self:GetClientInfo( "tr_type" )
+		local travelType		= self:GetClientInfo( "tr_type" )
 		local elasticPosType	= self:GetClientNumber( "elastic_pos_type" )
-		local rotRopeType	= self:GetClientInfo( "rot_rope_type" )
+		local rotMethod			= self:GetClientInfo( "rot_method" )
 
 		local dirVectors 			= self.dirVectors
 		local wheelAxisVec 			= self.wheelAxisVec
-		local wheelZVec = dirVectors[2]:Cross( wheelAxisVec )
+		local wheelZVec				= dirVectors[2]:Cross( wheelAxisVec )
 
 		local baseEnt, wheelEnt		= self:GetEnt( 1 ), self:GetEnt( 2 )
 		local baseBone, wheelBone	= self:GetBone( 1 ), self:GetBone( 2 )
 		local localSusPos			= self.localSusPos
 
-		local suspension = {}
-		local ply = self:GetOwner()
+		local suspension	= {}
+		local ply			= self:GetOwner()
 
-		local function getClientColor( cvar )
-			local _, col = xpcall( function() return HexToColor( self:GetClientInfo( cvar ) ) end, function () return color_white end )
-			return col
-		end
 
 		 if travelType ~= "any" then
 
 			local width	= self:GetClientNumber( "tr_width" )
 			local mat	= self:GetClientInfo( "tr_mat" )
-			local col	= getClientColor( "tr_col")
+			local col	= self:GetClientColor( "tr_col")
 			local constrs
 
 			if travelType == "linear_rope" then
 				local length	= self:GetClientNumber( "tr_linear_rope_length" )
 				local count		= self:GetClientNumber( "tr_linear_rope_count")
-				constrs = makeRopeSlider( wheelEnt, baseEnt, wheelBone, baseBone, localSusPos, dirVectors, length, width, mat, col, count, ply )
+				constrs = SmartSuspension.MakeRopeSlider( wheelEnt, baseEnt, wheelBone, baseBone, localSusPos, dirVectors, length, width, mat, col, count, ply )
 
 			elseif travelType == "curved_rope" then
 				local offsetX	= self:GetClientNumber( "tr_curved_offx" )
 				local offsetY	= self:GetClientNumber( "tr_curved_offy" )
-				constrs = makeRopeCurver( wheelEnt, baseEnt, wheelBone, baseBone, localSusPos, dirVectors, offsetX, offsetY, width, mat, col, ply )
+				constrs = SmartSuspension.MakeRopeCurver( wheelEnt, baseEnt, wheelBone, baseBone, localSusPos, dirVectors, offsetX, offsetY, width, mat, col, ply )
 			end
 
 			if constrs then table.Add( suspension, constrs ) end
@@ -341,11 +155,11 @@ if SERVER then
 
 			local width	= self:GetClientNumber( "limitrope_width" )
 			local mat	= self:GetClientInfo( "limitrope_mat" )
-			local col	= getClientColor( "limitrope_col")
+			local col	= self:GetClientColor( "limitrope_col")
 
 			local upperDistance	= self:GetClientNumber("limitrope_upper_dist")
 			local lowerDistance	= self:GetClientNumber("limitrope_lower_dist")
-			local constr = makeLimitRope( wheelEnt, baseEnt, wheelBone, baseBone, localSusPos, dirVectors, lowerDistance, upperDistance, width, mat, col, ply )
+			local constr = SmartSuspension.MakeLimitRope( wheelEnt, baseEnt, wheelBone, baseBone, localSusPos, dirVectors, lowerDistance, upperDistance, width, mat, col, ply )
 			if constr then table.insert( suspension, constr ) end
 
 		end
@@ -354,33 +168,26 @@ if SERVER then
 
 			local width	= self:GetClientNumber( "elastic_width" )
 			local mat	= self:GetClientInfo( "elastic_mat" )
-			local col	= getClientColor( "elastic_col")
+			local col	= self:GetClientColor( "elastic_col")
 
 			local constant
-			
+
 			if self:GetClientInfo( "elastic_method" ) == "static_sag" then
-				local g = 600 -- gravity
-				local wheelCount = self:GetClientNumber( "elastic_wheel_count" )
-				local staticSag = self:GetClientNumber( "elastic_static_sag" )
-				--- old
-				-- too weak for small vehicles
-				-- needs to take into account wheel "height", very hard to do
-				--constant	= 18 * math.min( baseEnt:GetPhysicsObject():GetMass(), 10 * wheelEnt:GetPhysicsObject():GetMass() )
-				--constant	= 50 * math.min( baseEnt:GetPhysicsObject():GetMass(), 10 * wheelEnt:GetPhysicsObject():GetMass() )
-				--damping		= constant * 0.035
-				--rdamping	= 100
+				local g				= 600 -- gravity
+				local wheelCount	= self:GetClientNumber( "elastic_wheel_count" )
+				local staticSag		= self:GetClientNumber( "elastic_static_sag" )
 
 				-- applied force = dist * constant
 				-- gravity force = mass * g
 				-- we want: staticSag * constant = mass * g / ( wheelCount * elasticCount )
 				-- this means constant = mass * g / ( staticSag * wheelCount * elasticCount )
-				constant = baseEnt:GetPhysicsObject():GetMass() * g / ( staticSag * wheelCount * elasticPosType )
+				constant	= baseEnt:GetPhysicsObject():GetMass() * g / ( staticSag * wheelCount * elasticPosType )
 
 			else
 				constant	= self:GetClientNumber( "elastic_constant" )
 			end
 
-			local damping		= self:GetClientNumber( "elastic_damping" )
+			local damping	= self:GetClientNumber( "elastic_damping" )
 			local rdamping	= self:GetClientNumber( "elastic_rdamping" )
 
 			local offsetsX = {}
@@ -388,30 +195,33 @@ if SERVER then
 			if elasticPosType > 1 then table.Add( offsetsX, { -20, 20 } ) end
 
 			for _, offsetX in ipairs( offsetsX ) do
-				local constr = makeElastic( wheelEnt, baseEnt, wheelBone, baseBone, localSusPos, wheelAxisVec, offsetX, constant, damping, rdamping, width, mat, col, ply )
+				local constr = SmartSuspension.MakeElastic( wheelEnt, baseEnt, wheelBone, baseBone, localSusPos, wheelAxisVec, offsetX, constant, damping, rdamping, width, mat, col, ply )
 				if constr then table.insert( suspension, constr ) end
 			end
 
 		end
 
 
-		if rotRopeType ~= "none" then
+		if rotMethod == "rot_rope" then
 
-			local canSteer	= rotRopeType == "steer"
-			local travelCurved	= travelType == "curved_rope"
+			local rotRopeType	= self:GetClientInfo( "rot_rope_type" )
+			local travelCurved	= travelType	== "curved_rope"
+			local steerAng		= math.rad( math.abs( self:GetClientNumber( "rot_rope_steer_ang" ) ) )
+			local canSteer		= steerAng ~= 0 and rotRopeType	== "steer"
 
 			local offY		= wheelEnt:BoundingRadius() / 2
 			local offX		= travelCurved and self:GetClientNumber( "tr_curved_offx" ) or 16000
-			-- curver need shorter ropes as if the rope is long it tries to move towards the rope and weird movement happens
+			-- curver need shorter ropes since if the rope is long it tries to move towards the rope and weird movement happens
 			local dirVecs	= { wheelAxisVec, wheelZVec, dirVectors[2] }
 			local susPos	= wheelEnt:LocalToWorld( localSusPos )
 			local farVec	= - dirVecs[1] * offX
 			local farPos 	= susPos + farVec
+			local farDist	= math.abs( offX )
 			if travelCurved then dirVecs[1] = - dirVecs[1] end
 
 			local width		= self:GetClientNumber( "rot_rope_width" )
 			local mat		= self:GetClientInfo( "rot_rope_mat" )
-			local col		= getClientColor( "rot_rope_col")
+			local col		= self:GetClientColor( "rot_rope_col")
 
 			local e1, e2 = wheelEnt, baseEnt
 			local b1, b2 = wheelBone, baseBone
@@ -419,12 +229,22 @@ if SERVER then
 			if travelCurved then
 
 				if canSteer then
-					local constrs = makeRopeCurver( e1, e2, wheelBone, baseBone, e1:WorldToLocal( farPos ), dirVecs, offX, offY / 2, width, mat, col, ply )
+					local constrs = SmartSuspension.MakeRopeCurver(
+						e1, e2, wheelBone, baseBone,
+						e1:WorldToLocal( farPos ),
+						dirVecs, offX, offY / 2,
+						width, mat, col, ply
+					)
 					if constrs then table.Add( suspension, constrs ) end
 				else
 					-- powerful rope frame that forces the wheel to face the arc center while letting it roll
 					for _, vec in ipairs( { susPos, farPos + farVec, farPos + dirVecs[2] * offX, farPos + dirVecs[3] * offX } ) do
-						local constr = makeGoodRope( ply, e1, e2, b1, b2, e1:WorldToLocal( farPos ), e2:WorldToLocal( vec ), nil, 0, 0, width, mat, true, col)
+						local constr = SmartSuspension.MakeGoodRope(
+							ply, e1, e2, b1, b2,
+							e1:WorldToLocal( farPos ),
+							e2:WorldToLocal( vec ),
+							nil, 0, 0, width, mat, true, col
+						)
 						table.insert( suspension, constr )
 					end
 				end
@@ -432,14 +252,35 @@ if SERVER then
 			else
 
 				for _, dir in ipairs( { -1, 1 } ) do
-					local constr = makeGoodRope( ply, e1, e2, b1, b2, e1:WorldToLocal( farPos ), e2:WorldToLocal( susPos + dirVecs[2] * offY * dir ), nil, 0, 0, width, mat, true, col)
+					local constr = SmartSuspension.MakeGoodRope(
+						ply, e1, e2, b1, b2,
+						e1:WorldToLocal( farPos ),
+						e2:WorldToLocal( susPos + dirVecs[2] * offY * dir ),
+						nil, 0, 0, width, mat, true, col
+					)
 					table.insert( suspension, constr )
 					if not canSteer then
-						constr = makeGoodRope( ply, e1, e2, b1, b2, e1:WorldToLocal( farPos ), e2:WorldToLocal( susPos + dirVecs[3] * offX * dir ), nil, 0, 0, width, mat, true, col)
+						constr = SmartSuspension.MakeGoodRope(
+							ply, e1, e2, b1, b2,
+							e1:WorldToLocal( farPos ),
+							e2:WorldToLocal( susPos + dirVecs[3] * offX * dir ),
+							nil, 0, 0, width, mat, true, col
+						)
 						table.insert( suspension, constr )
 					end
 				end
 
+			end
+
+			-- TODO: does the inferiority condition even work if the angle convar is set to 180 degrees? Or float rounding?
+			if canSteer and steerAng < math.pi then
+				-- Angle limitation
+				suspension[#suspension] = SmartSuspension.MakeGoodRope(
+					ply, e1, e2, b1, b2,
+					e1:WorldToLocal( farPos ),
+					e2:WorldToLocal( farPos ),
+					farDist * 2 * math.sin( steerAng / 2), 0, 0, width, mat, false, col
+				)
 			end
 
 		end
@@ -447,7 +288,7 @@ if SERVER then
 
 
 
-		if self:GetClientBool( "abs_enabled" ) then
+		if rotMethod == "abs" then
 
 			local nocollide	= self:GetClientNumber("abs_nocollide")
 
@@ -458,7 +299,7 @@ if SERVER then
 			end
 
 			local coordSpace	= { wheelAxisVec, dirVectors[2], wheelZVec }
-			local constr		= makeAlignedAdvBallsocket( baseEnt, wheelEnt, baseBone, wheelBone, coordSpace, f(1,1), f(2,1), f(3,1), f(1,2), f(2,2), f(3,2), f(1,3), f(2,3), f(3,3), nocollide, ply )
+			local constr		= SmartSuspension.MakeAlignedAdvBallsocket( baseEnt, wheelEnt, baseBone, wheelBone, coordSpace, f(1,1), f(2,1), f(3,1), f(1,2), f(2,2), f(3,2), f(1,3), f(2,3), f(3,3), nocollide, ply )
 			if constr then table.insert( suspension, constr ) end
 
 		end
@@ -470,12 +311,12 @@ if SERVER then
 
 	function TOOL:getClickPosition( trace )
 
-		local ent = trace.Entity
-		local phys = ent:GetPhysicsObjectNum( trace.PhysicsBone )
-		local pos_type = self:GetClientNumber( "pos_type" )
-		local snap_type = self:GetClientNumber( "snap_type" )
-		local corner_snap = bit.band( snap_type, 1 ) ~= 0
-		local center_snap = bit.band( snap_type, 2 ) ~= 0
+		local ent			= trace.Entity
+		local phys			= ent:GetPhysicsObjectNum( trace.PhysicsBone )
+		local pos_type		= self:GetClientNumber( "pos_type" )
+		local snap_type		= self:GetClientNumber( "snap_type" )
+		local corner_snap	= bit.band( snap_type, 1 ) ~= 0
+		local center_snap	= bit.band( snap_type, 2 ) ~= 0
 
 		if pos_type == 1 then
 			return ent:OBBCenter()
@@ -647,9 +488,17 @@ function TOOL:LeftClick(trace)
 	-- Create the suspension.
 	suspension = self:makeSuspension()
 
+	local completelyFailed = true
+	for _, constr in pairs( suspension ) do
+		if IsValid(constr) then
+			completelyFailed = false
+			break
+		end
+	end
+
 	-- Verify that at least one constraint is valid, otherwise the suspension creation has completely failed.
-	if noValidConstraintInTable( suspension ) then
-		self:ClearObjects() -- not called clientside, potential problem
+	if completelyFailed then
+		self:ClearObjects() -- TODO: not called clientside, potential problem
 		return self:Fail( ply, "The suspension was not created as no constraints were valid/existed. Check your settings in the menu." )
 	end
 
@@ -659,8 +508,8 @@ function TOOL:LeftClick(trace)
 	for k, constr in pairs( suspension ) do
 		if IsValid(constr) then
 			undo.AddEntity(constr)
-			ply:AddCount("ropeconstraints", constr) -- Small issue here: the AdvBallsocket is added to ropeconstraints, should be added to constraints instead.
-			ply:AddCleanup("ropeconstraints", constr)
+			ply:AddCount( "ropeconstraints", constr ) -- TODO: Small issue here: the AdvBallsocket is added to ropeconstraints, should be added to constraints instead.
+			ply:AddCleanup( "ropeconstraints", constr )
 		end
 	end
 	undo.Finish()
@@ -1010,7 +859,7 @@ if CLIENT then
 
 		CPanel:Help("A suspension is made of multiple constraints. With this tool, you can combine them in many different ways!")
 		CPanel:Help("First, select your vehicle base and click its top, then you can create as many suspensions as you want by clicking wheels and choosing their rotation axis.")
-		CPanel:Help("There are a lot of settings below, you should look at the Strength tab first. For the other ones, you can keep the default values.")
+		CPanel:Help("There are a lot of settings below, you should look at the Strength and Rotation tab in priority.")
 
 		CPanel:ToolPresets( mode, cVarList )
 
@@ -1019,7 +868,7 @@ if CLIENT then
 			propertySheet:SetTall( 600 )
 			propertySheet:DockMargin( 10, 10, 10, 0 )
 
-		local generalCTab = vgui.Create( "DControlTab", propertySheet )
+		local generalCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
 			propertySheet:AddSheet( "General", generalCTab, "icon16/cog.png" )
 
 			local hitPosComboBox = generalCTab:ComboBox( "Wheel center", mode .. "_pos_type" )
@@ -1050,7 +899,7 @@ if CLIENT then
 			]]
 
 
-		local elaCTab = vgui.Create( "DControlTab", propertySheet )
+		local elaCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
 			propertySheet:AddSheet( "Strength", elaCTab, "icon16/control_eject_blue.png", false, false, "Manage how strong the suspension is." )
 
 			local elaSettForm, wheelCountSlider, wheelCountHelp, staticSagSlider, staticSagHelp, constSlider, constHelp
@@ -1112,11 +961,11 @@ if CLIENT then
 
 				rDampSlider = elaSettForm:NumSlider("#tool.elastic.rdamping", mode .. "_elastic_rdamping", 0, 50000, 2)
 					elaSettForm:ControlHelp( "Similar to damping, but effect is proportional to the velocity of the wheel relative to the vehicle base. Can cause shaking if too high." )
-		
+
 			elaMethodComboBox:OnSelect( nil, elaMethodComboBox:GetSelected() )
 			elaPosTypeComboBox:OnSelect( nil, elaPosTypeComboBox:GetSelected() )
 
-		local travelCTab = vgui.Create( "DControlTab", propertySheet )
+		local travelCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
 		--"icon16/control_equalizer_blue.png"
 		--"icon16/arrow_up.png"
 		--"icon16/drive_cd.png"
@@ -1169,13 +1018,13 @@ if CLIENT then
 				TrLinSettForm.Header:SetImage( "icon16/arrow_up.png" )
 				TrLinSettForm:Hide()
 
-				TrLinSettForm:Help( "Note that the rope sliders used for linear travel have an extension limit, and can act as very weak elastics." )
+				TrLinSettForm:Help( "Note that the rope sliders used for linear travel have an extension limit, and act as elastics." )
 
-				local TrLinCountSlider = TrLinSettForm:NumSlider( "Rope count", mode .. "_tr_linear_rope_count", 3, 4, 0 )
+				TrLinSettForm:NumSlider( "Rope count", mode .. "_tr_linear_rope_count", 3, 4, 0 )
 					TrLinSettForm:ControlHelp( "How many ropes are created for the slider. Low count reduces lag and diminishes the problems stated at the top. If you're not sure, set to 3." )
 
-				local TrLinLengthSlider = TrLinSettForm:NumSlider( "Rope length", mode .. "_tr_linear_rope_length", 10, 16000, 0 )
-					TrLinSettForm:ControlHelp( "How long each of the slider's rope is. Greater rope length will diminish the problems stated at the top. If you're not sure, set to 8000. Keep below 16000.\n" )
+				TrLinSettForm:NumSlider( "Rope length", mode .. "_tr_linear_rope_length", 10, 16000, 0 )
+					TrLinSettForm:ControlHelp( "How long each of the slider's rope is. Greater rope length will diminish the problems stated at the top. If you're not sure, set to 5000. Keep below 16000.\n" )
 
 			travelTypeComboBox:OnSelect( nil, travelTypeComboBox:GetSelected() )
 
@@ -1206,27 +1055,56 @@ if CLIENT then
 
 			extLimCheckBox:OnChange( extLimCheckBox:GetChecked() )
 
-		local RotCTab = vgui.Create( "DControlTab", propertySheet )
+		local RotCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
 
 			propertySheet:AddSheet( "Rotation", RotCTab, "icon16/cd.png", false, false, "Manage the rotational degrees of freedom of the wheel." )
 
-
 			RotCTab:Help( "Steering options and more are available here." )
 
-			local ABSSettForm
-			local ABSAddCheckBox = RotCTab:CheckBox( "Limit wheel rotation (ABS-based)", mode .. "_abs_enabled" )
+			local aBSPanels		= {}
 
-				function ABSAddCheckBox:OnChange( bVal )
-					if ABSSettForm:IsEnabled() == bVal then return end
-					CatSetActive( ABSSettForm, bVal )
+			local rotMethodComboBox = RotCTab:ComboBox( "Rotation method:", mode .. "_rot_method" )
+				rotMethodComboBox:SetSortItems( false )
+				rotMethodComboBox:Dock( TOP )
+				rotMethodComboBox:AddChoice(
+					"None",
+					"none"
+				)
+				rotMethodComboBox:AddChoice(
+					"Use ropes (NOT compatible with all vehicles)",
+					"rot_rope"
+				)
+				rotMethodComboBox:AddChoice(
+					"Use adv. ballsockets (NOT workshop compatible)",
+					"abs"
+				)
+
+				local function updateRotCTabPanels()
+
+					local rot_method = GetConVar( mode .. "_rot_method" ):GetString()
+					local rot_rope_enabled, abs_enabled = ( rot_method == "rot_rope" ), ( rot_method == "abs" )
+
+					-- dirty hacks
+					for i, panel in ipairs( RotCTab:GetCanvas():GetChildren() ) do
+						if i > 2 then
+							panel:SetVisible( rot_rope_enabled )
+						end
+					end
+
+					for i, panel in ipairs( aBSPanels ) do
+						if i > 2 then
+							panel:SetVisible( abs_enabled )
+						end
+					end
 				end
 
-				RotCTab:ControlHelp( "Enable to limit your wheel rotation relative to your vehicle base prop using an Advanced Ball Socket." )
+				local oldRotMethodComboBoxSetValue = rotMethodComboBox.SetValue
+				function rotMethodComboBox.SetValue( ... )
+					oldRotMethodComboBoxSetValue( ... )
+					updateRotCTabPanels()
+				end
 
-			ABSSettForm = RotCTab:Form( "Rotation limits", color_blue, color_white )
-
-				ABSSettForm.Header:SetImage( "icon16/cd_edit.png" )
-				ABSSettForm:Help( "Note that the base GMod Duplicator won't recreate advanced ballsockets properly most of the time." )
+				RotCTab:ControlHelp( "Note that the base GMod Duplicator won't recreate advanced ballsockets properly most of the time." )
 
 				local ABSSliders = {}
 					local function updateABSSliders( ... )
@@ -1235,15 +1113,15 @@ if CLIENT then
 						end
 					end
 
-				local RotTypeComboBox = ABSSettForm:ComboBox( "Rotation presets" )
-					RotTypeComboBox:SetSortItems( false )
-					RotTypeComboBox:Dock( TOP )
-					RotTypeComboBox:AddChoice( "Unlimited",					"any" )
-					RotTypeComboBox:AddChoice( "Only allow spin",			"spin" )
-					RotTypeComboBox:AddChoice( "Only allow spin and steer",	"steer" )
-					RotTypeComboBox:AddChoice( "No rotation",				"none" )
+				local aBSPresets = RotCTab:ComboBox( "Rotation presets:" )
+					aBSPresets:SetSortItems( false )
+					aBSPresets:Dock( TOP )
+					aBSPresets:AddChoice( "Unlimited",					"any" )
+					aBSPresets:AddChoice( "Only allow spin",			"spin" )
+					aBSPresets:AddChoice( "Only allow spin and steer",	"steer" )
+					aBSPresets:AddChoice( "No rotation",				"none" )
 
-					function RotTypeComboBox:OnSelect( index, value, data )
+					function aBSPresets:OnSelect( index, value, data )
 						if data == "none" then
 							updateABSSliders( -0.01, 0.01, 0, -0.01, 0.01, 0, -0.01, 0.01, 0 )
 						elseif data == "any" then
@@ -1266,41 +1144,44 @@ if CLIENT then
 
 				for _, axis in ipairs( { "z", "x", "y" } ) do
 					local i = 3 * axisInfo[ axis ].ord
-					local lbl = ABSSettForm:ControlHelp( axisInfo[ axis ].def )
+					local lbl = RotCTab:ControlHelp( axisInfo[ axis ].def )
 					lbl:DockMargin( 32, 16, 32, 8 )
-					ABSSliders[ i - 2 ]	= ABSSettForm:NumSlider( string.upper( axis ) .. " Minimum Rotation", mode .. "_abs_" .. axis .. "min", -180, 180, 2 )
-					ABSSliders[ i - 1]	= ABSSettForm:NumSlider( string.upper( axis ) .. " Maximum Rotation", mode .. "_abs_" .. axis .. "max", -180, 180, 2 )
-					ABSSliders[ i ]		= ABSSettForm:NumSlider( string.upper( axis ) .. " " .. l( "tool", "hingefriction" ), mode .. "_abs_" .. axis .. "fric", 0, 1000, 2 )
+					ABSSliders[ i - 2 ]	= RotCTab:NumSlider( string.upper( axis ) .. " Minimum Rotation", mode .. "_abs_" .. axis .. "min", -180, 180, 2 )
+					ABSSliders[ i - 1]	= RotCTab:NumSlider( string.upper( axis ) .. " Maximum Rotation", mode .. "_abs_" .. axis .. "max", -180, 180, 2 )
+					ABSSliders[ i ]		= RotCTab:NumSlider( string.upper( axis ) .. " " .. l( "tool", "hingefriction" ), mode .. "_abs_" .. axis .. "fric", 0, 1000, 2 )
 				end
 
-				local ABSColCheckBox = ABSSettForm:CheckBox( "No Collide", mode .. "_abs_nocollide" )
+				local ABSColCheckBox = RotCTab:CheckBox( "No Collide", mode .. "_abs_nocollide" )
 					ABSColCheckBox:SetTooltip( "Disable collisions between the wheel and the vehicle base.")
 					ABSColCheckBox:GetParent():DockPadding( 8, 8, 0, 8 )
 
-			ABSAddCheckBox:OnChange( ABSAddCheckBox:GetChecked() )
+			aBSPanels = RotCTab:GetCanvas():GetChildren()
 
+			RotCTab:ControlHelp(
+				"This option doesn't work properly for some vehicle setups!\nFor this to work, you must:\n- Choose a wheel rotation axis that's perpendicular to your vehicle top axis\n- Choose a travel path (linear or curved)\nOtherwise, here's what will happen:\n- The suspension won't extend\n- The rotation and/or travel path won't be what you expected."
+			)
 
-			local rotHelp = RotCTab:Help( "Below is experimental." )
-			rotHelp:DockMargin( 8, 32, 0, 0 )
+			local rotRopeComboBox, rotRopeLabel = RotCTab:ComboBox( "Rotation type:", mode .. "_rot_rope_type" )
+				rotRopeLabel:SetWide( 160 )
+				rotRopeComboBox:Dock( TOP )
+				rotRopeComboBox:SetSortItems( false )
+				rotRopeComboBox:AddChoice( "Spin",				"spin" )
+				rotRopeComboBox:AddChoice( "Spin and steer",	"steer" )
 
-			local RotRopeComboBox, RotRopeLabel = RotCTab:ComboBox( "Limit wheel rotation (ropes-based)", mode .. "_rot_rope_type" )
-				RotRopeLabel:SetWide( 160 )
-				RotRopeComboBox:Dock( TOP )
-				RotRopeComboBox:SetSortItems( false )
-				RotRopeComboBox:AddChoice( "Disabled",					"none" )
-				RotRopeComboBox:AddChoice( "Only allow spin",			"spin" )
-				RotRopeComboBox:AddChoice( "Only allow spin and steer",	"steer" )
+			RotCTab:NumSlider( "Steer angle", mode .. "_rot_rope_steer_ang", 0, 180, 2 )
 
-				RotCTab:ControlHelp( "Rope-based alternative to the advanced ballsocket, that does not get broken by the duplicator.\n\nThis is tagged with 'EXPERIMENTAL' since this option doesn't work properly for some vehicle setups!\nFor this to work, you must:\n- Choose a wheel rotation axis that's perpendicular to your vehicle top axis\n- Choose a travel path (linear or curved)\nOtherwise, here's what will happen:\n- The suspension won't extend\n- The rotation and/or travel path won't be what you expect." )
+			RotCTab:ControlHelp( "This value is used only if you choose 'Spin and steer'.")
+
+			updateRotCTabPanels()
 
 		--[[
-		local PowCTab = vgui.Create( "DControlTab", propertySheet )
+		local PowCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
 
 			propertySheet:AddSheet( "Power", PowCTab, "icon16/cd.png", false, false, "Options for steering." )
 		]]
 
 
-		local visualCTab = vgui.Create( "DControlTab", propertySheet )
+		local visualCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
 			propertySheet:AddSheet( "Visual", visualCTab, "icon16/paintcan.png", false, false, "Manage the appearence of the constraints." )
 
 			visualCTab:Help( "Change the settings below if you want to see what the constraints that make up the suspension look like." )

@@ -38,6 +38,33 @@ function PANEL:AddItem( left, right, noPadding )
 end
 
 
+function PANEL:NumSlider( strLabel, strConVar, numMin, numMax, numDecimals )
+
+	local left = vgui.Create( "DNumSlider", self )
+	left:SetText( strLabel )
+	left:SetMinMax( numMin, numMax )
+	left:SetDark( true )
+
+	if ( numDecimals != nil ) then left:SetDecimals( numDecimals ) end
+
+	left:SetConVar( strConVar )
+	left:SizeToContents()
+
+	if ( strConVar ) then
+		local cvar = GetConVar( strConVar )
+		if ( cvar ) then
+			local defaultValue = tonumber( cvar:GetDefault() )
+			if ( defaultValue ) then left:SetDefaultValue( defaultValue ) end
+		end
+	end
+
+	self:AddItem( left, nil )
+
+	return left
+
+end
+
+
 function PANEL:CheckBox( strLabel, strConVar )
 
 	local left = vgui.Create( "DCheckBoxLabel", self )
@@ -117,5 +144,5 @@ function PANEL:ControlHelp( strLabel )
 end
 
 
-derma.DefineControl( "DControlTab", "", PANEL, "DScrollPanel")
+derma.DefineControl( "smart_suspension_control_tab", "", PANEL, "DScrollPanel")
 -- "A scroll panel with helper functions. This is from the Smart Suspension addon.""
