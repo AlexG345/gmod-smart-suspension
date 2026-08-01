@@ -16,7 +16,7 @@ end
 
 
 
-local function makeConstrSafe( ply, type, factory, ... )
+function SmartSuspension.MakeConstrSafe( ply, type, factory, ... )
 
 	type = type or "ropeconstraints"
 
@@ -46,7 +46,7 @@ function SmartSuspension.MakeGoodRope( ply, ent1, ent2, bone1, bone2, localPos1,
 		ent2:SetPos( ent2Pos - ent1Pos )
 	end
 
-	local constr, rope = makeConstrSafe( ply, nil, constraint.Rope, ent1, ent2, bone1, bone2, localPos1, localPos2, length, ... )
+	local constr, rope = SmartSuspension.MakeConstrSafe( ply, nil, constraint.Rope, ent1, ent2, bone1, bone2, localPos1, localPos2, length, ... )
 
 	if canMove then
 		ent1:SetPos( ent1Pos )
@@ -93,7 +93,7 @@ function SmartSuspension.MakeRopeCurver( ent1, ent2, bone1, bone2, localPos1, di
 	local offsetYDirections = { yVec, -yVec }
 	local pos1 = ent1:LocalToWorld( localPos1 )
 
-	for _, yDirection in pairs( offsetYDirections ) do
+	for i, yDirection in ipairs( offsetYDirections ) do
 
 		local pos2 = pos1 - ( xVec * offsetX ) + ( yDirection * offsetY )
 		local length = ( pos2 - pos1 ):Length()
@@ -102,7 +102,7 @@ function SmartSuspension.MakeRopeCurver( ent1, ent2, bone1, bone2, localPos1, di
 
 		local constr = SmartSuspension.MakeGoodRope( ply, ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, true, color )
 		if not constr then return slider end
-		slider[#slider] = constr
+		slider[i] = constr
 
 	end
 
@@ -126,7 +126,7 @@ function SmartSuspension.MakeLimitRope( ent1, ent2, bone1, bone2, localPos, dirV
 	local localPos1	= ent1:WorldToLocal( pos1 )
 	local localPos2	= ent2:WorldToLocal( pos2 )
 
-	return makeConstrSafe( ply, nil, constraint.Rope, ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, false, color )
+	return SmartSuspension.MakeConstrSafe( ply, nil, constraint.Rope, ent1, ent2, bone1, bone2, localPos1, localPos2, length, 0, 0, width, material, false, color )
 
 end
 
@@ -139,7 +139,7 @@ function SmartSuspension.MakeElastic( ent1, ent2, bone1, bone2, localPos, rotati
 	local localPos1		= ent1:WorldToLocal( elastic_pos )
 	local localPos2		= ent2:WorldToLocal( elastic_pos )
 
-	return makeConstrSafe( ply, nil, constraint.Elastic, ent1, ent2, bone1, bone2, localPos1, localPos2, constant, damping, rdamping, material, width, false, color )
+	return SmartSuspension.MakeConstrSafe( ply, nil, constraint.Elastic, ent1, ent2, bone1, bone2, localPos1, localPos2, constant, damping, rdamping, material, width, false, color )
 
 end
 
@@ -172,7 +172,7 @@ function SmartSuspension.MakeAlignedAdvBallsocket( ent1, ent2, bone1, bone2, coo
 	local localPos2 = vector_origin
 
 	-- Create the advanced ballsocket that will limit the axis of rotation (of ent1 relative to ent2) to rotationAxis
-	local constr = makeConstrSafe( ply, "constraints", constraint.AdvBallsocket, ent1, ent2, bone1, bone2, localPos1, localPos2, 0, 0, xmin, ymin, zmin, xmax, ymax, zmax, xfric, yfric, zfric, 1, nocollide)
+	local constr = SmartSuspension.MakeConstrSafe( ply, "constraints", constraint.AdvBallsocket, ent1, ent2, bone1, bone2, localPos1, localPos2, 0, 0, xmin, ymin, zmin, xmax, ymax, zmax, xfric, yfric, zfric, 1, nocollide)
 
 	-- Restore the entities angles
 	ent1:SetAngles( cacheAng1 )
