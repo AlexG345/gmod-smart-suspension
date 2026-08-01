@@ -869,21 +869,12 @@ if CLIENT then
 			return controlPanel
 		end
 
-		local function CatSetActive( panel, b )
-			panel:SetEnabled(b)
-			if panel:GetExpanded() and not b then
-				timer.Simple( panel:GetAnimTime(), function() panel:SetVisible( false ) end )
-			else
-				panel:SetVisible( b )
-			end
-			panel:DoExpansion( b )
-			panel:SetExpanded( b )
-			panel:InvalidateParent( true )
-		end
-
-		CPanel:Help("A suspension is made of multiple constraints. With this tool, you can combine them in many different ways!")
-		CPanel:Help("First, select your vehicle base and click its top, then you can create as many suspensions as you want by clicking wheels and choosing their rotation axis.")
-		CPanel:Help("There are a lot of settings below, you should look at the Strength and Rotation tab in priority.")
+		CPanel:Help( "This tool lets you toggle and customize the different groups of constraints that make up a suspension." )
+		CPanel:Help( "After having looked at the settings, you can create suspensions by following these 4 steps:.")
+		CPanel:Help( "1. Select your vehicle base (can be any prop) by clicking on it." )
+		CPanel:Help( "2. Click on any surface to define the top direction of your vehicle (if you're not sure, click on your vehicle's roof)." )
+		CPanel:Help( "3. Click on a wheel to start a suspension" )
+		CPanel:Help( "4. Click on any surface to define the spin axis of your wheel (if you're not sure, click on your wheel or vehicle's side.\nYou can now repeat step 3 and 4 for any wheels." )
 
 		CPanel:ToolPresets( mode, cVarList )
 
@@ -913,10 +904,9 @@ if CLIENT then
 		end
 
 		local generalForm = createSheet( "General", "icon16/cog.png" )
-		-- vgui.Create( "smart_suspension_control_tab", propertySheet )
-		-- 	propertySheet:AddSheet( "General", generalCTab, "icon16/cog.png" )
 
 			local hitPosComboBox = generalForm:ComboBox( "Wheel center", mode .. "_pos_type" )
+				hitPosComboBox:Dock( TOP )
 				hitPosComboBox:SetSortItems( false )
 				hitPosComboBox:AddChoice( "Bounding Box Center",	"1" )
 				hitPosComboBox:AddChoice( "Coordinates Center",		"2" )
@@ -925,8 +915,9 @@ if CLIENT then
 				generalForm:ControlHelp( "Choose what will be considered as the center of the wheel. If you use the \'Make Spherical\' tool, set this to coordinates center." )
 
 			local snapTypeComboBox = generalForm:ComboBox( "Snap Type", mode .. "_snap_type" )
+				snapTypeComboBox:Dock( TOP )
 				snapTypeComboBox:SetSortItems( false )
-				snapTypeComboBox:AddChoice( "None",						"0", false, "icon16/shape_square.png" )
+				snapTypeComboBox:AddChoice( "None",							"0", false, "icon16/shape_square.png" )
 				snapTypeComboBox:AddChoice( "Prop corners",					"1", false, "icon16/shape_handles.png" )
 				snapTypeComboBox:AddChoice( "Prop midpoints",				"2", false, "icon16/shape_align_center.png" )
 				snapTypeComboBox:AddChoice( "Prop corners and midpoints",	"3", false, "icon16/shape_ungroup.png" )
@@ -937,64 +928,64 @@ if CLIENT then
 
 
 		local elaForm = createSheet( "Elastic", "icon16/control_eject_blue.png", nil, false, false, "Manage how strong the suspension is." )
-		-- vgui.Create( "smart_suspension_control_tab", propertySheet )
-		-- 	propertySheet:AddSheet( "Strength", elaForm, "icon16/control_eject_blue.png", false, false, "Manage how strong the suspension is." )
 
 			local elaMethodComboBox, wheelCountSlider, wheelCountHelp, staticSagSlider, staticSagHelp, constSlider, constHelp
 
 			local elaPosTypeComboBox = elaForm:ComboBox( "Elastics layout:", mode .. "_elastic_pos_type" )
 				elaPosTypeComboBox:Dock( TOP )
 				elaPosTypeComboBox:SetSortItems( false )
-				local v = GetConVar( mode .. "_elastic_pos_type" ):GetString()
-				elaPosTypeComboBox:AddChoice( "0 (   ): None",						"0", v == "0" )
-				elaPosTypeComboBox:AddChoice( "1 ( * ): Centered on wheel",			"1", v == "1" )
-				elaPosTypeComboBox:AddChoice( "2 (* *): Offset on rotation axis",	"2", v == "2" )
-				elaPosTypeComboBox:AddChoice( "3 (***): Centered + Offset",			"3", v == "3" )
+				elaPosTypeComboBox:AddChoice( "No elastics" )
+				elaPosTypeComboBox:AddChoice( "1 Elastic (Centered on wheel)" )
+				elaPosTypeComboBox:AddChoice( "2 Elastics (Offset along the wheel's rotation axis" )
+				elaPosTypeComboBox:AddChoice( "3 Elastics (Centered + Offset)" )
 				elaPosTypeComboBox:SetTooltip( "Choose how many elastics are created and where. Each '*' represents an elastic." )
 				elaForm:ControlHelp( "Choose how many elastics are created and where. If you don't use elastics, the suspension won't support the weight of your vehicle." )
 
-				local oldElaPosTypeComboBoxOnSelect = elaPosTypeComboBox.OnSelect
-				function elaPosTypeComboBox:OnSelect( index, value, data )
-					if index then oldElaPosTypeComboBoxOnSelect( self, index, value, data ) end
+				local oldElaPosTypeComboBoxSetValue = elaPosTypeComboBox.SetValue
+				function elaPosTypeComboBox.SetValue( ... )
+					oldElaPosTypeComboBoxSetValue( ... )
 
-					local b = data ~= "0"
+					local b = GetConVar( mode .. "_elastic_pos_type" ):GetInt() ~= 0
 
 					for i, panel in ipairs( elaForm:GetChildren() ) do
-						print( panel )
 						panel:SetVisible( b or i < 4 )
 					end
 
 					if b then
-						elaMethodComboBox:OnSelect( nil, elaMethodComboBox:GetSelected() )
+						local value = elaMethodComboBox:GetSelected()
+						if value then
+							elaMethodComboBox:SetValue( value )
+						end
 					end
 
 					elaForm:InvalidateChildren( true )
 				end
 
 
-				elaForm:Help("Below you can change the strength of the elastic(s) used for the suspension.")
+				elaForm:Help( "Below you can change the strength of the elastic(s) used for the suspension." )
 
 				elaMethodComboBox = elaForm:ComboBox( "Parameters type", mode .. "_elastic_method" )
 					elaMethodComboBox:Dock( TOP )
 					elaMethodComboBox:SetSortItems( false )
-					local v = GetConVar( mode .. "_elastic_method" ):GetString()
-					elaMethodComboBox:AddChoice( "Stiffness",	"constant",		v == "constant" )
-					elaMethodComboBox:AddChoice( "Static sag",	"static_sag",	v == "static_sag" )
+					elaMethodComboBox:AddChoice( "Stiffness",	"constant", true )
+					elaMethodComboBox:AddChoice( "Static sag",	"static_sag" )
 
-					local h = elaMethodComboBox.OnSelect
-					function elaMethodComboBox:OnSelect( index, value, data )
-						if index then h( self, index, value, data ) end
-						local b = data == "static_sag"
+					local oldElaMethodComboBoxSetValue = elaMethodComboBox.SetValue
+					function elaMethodComboBox.SetValue( ... )
+						oldElaMethodComboBoxSetValue( ... )
+						local b = "static_sag" == GetConVar( mode .. "_elastic_method" ):GetString()
 
-						print( index, value, data, b )
 						staticSagSlider:SetVisible( b )
 						staticSagHelp:SetVisible( b )
 						wheelCountSlider:SetVisible( b )
 						wheelCountHelp:SetVisible( b )
 						constSlider:SetVisible( not b )
 						constHelp:SetVisible( not b )
+
 						elaForm:InvalidateChildren( true )
 					end
+
+					elaForm:ControlHelp( "Choose the way you want to define the suspension's strength." )
 
 				wheelCountSlider = elaForm:NumSlider( "Wheel count", mode .. "_elastic_wheel_count", 1, 12, 0 )
 					wheelCountHelp = elaForm:ControlHelp( "The tool needs to account for the number of wheels on your vehicle when calculating the strength of the suspension." )
@@ -1013,107 +1004,107 @@ if CLIENT then
 				rDampSlider = elaForm:NumSlider("#tool.elastic.rdamping", mode .. "_elastic_rdamping", 0, 50000, 2)
 					elaForm:ControlHelp( "Similar to damping, but effect is proportional to the velocity of the wheel relative to the vehicle base. Can cause shaking if too high." )
 
-			-- elaMethodComboBox:OnSelect( nil, elaMethodComboBox:GetSelected() )
-			elaPosTypeComboBox:OnSelect( nil, elaPosTypeComboBox:GetSelected() )
 
-		local travelCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
+		local travelForm = createSheet( "Travel", "icon16/arrow_up.png", nil, false, false, "Manage the linear degrees of freedom of the wheel." )
 		--"icon16/control_equalizer_blue.png"
 		--"icon16/arrow_up.png"
-		--"icon16/drive_cd.png"
-			propertySheet:AddSheet( "Travel", travelCTab, "icon16/arrow_up.png", false, false, "Manage the linear degrees of freedom of the wheel." )
+		--"icon16/drive_cd.png"*
 
-			local TrCurSettForm, TrLinSettForm
+			local travelCurvedLastIndex
+			local travelLinearLastIndex
 
-			local travelTypeComboBox = travelCTab:ComboBox( "Travel path:", mode .. "_tr_type" )
-				v = GetConVar( mode .. "_tr_type" ):GetString()
+			local travelTypeComboBox = travelForm:ComboBox( "Travel path:", mode .. "_tr_type" )
+				travelTypeComboBox:Dock( TOP )
 				travelTypeComboBox:SetSortItems( false )
-				travelTypeComboBox:AddChoice( "Unlimited",	"any",		v == "any" )
-				travelTypeComboBox:AddChoice( "Curved",	"curved_rope",	v == "curved_rope" )
-				travelTypeComboBox:AddChoice( "Linear",	"linear_rope",	v == "linear_rope" )
+				travelTypeComboBox:AddChoice( "Unlimited",	"any" )
+				travelTypeComboBox:AddChoice( "Curved",	"curved_rope" )
+				travelTypeComboBox:AddChoice( "Linear",	"linear_rope" )
 
-				travelCTab:ControlHelp( "Choose the way the suspension extends.")
-				local f = travelTypeComboBox.OnSelect
+				travelForm:ControlHelp( "Choose how restricted the wheel movement will be." )
 
-				function travelTypeComboBox:OnSelect( index, value, data )
-					if index then f( self, index, value, data ) end
-					CatSetActive( TrCurSettForm, data == "curved_rope" )
-					CatSetActive( TrLinSettForm, data == "linear_rope" )
-					travelCTab:GetCanvas():InvalidateChildren( true )
-				end
+				local oldTravelTypeComboBoxSetValue = travelTypeComboBox.SetValue
+				function travelTypeComboBox.SetValue( ... )
+					oldTravelTypeComboBoxSetValue( ... )
 
-			TrCurSettForm = travelCTab:Form( "Curved travel settings", color_blue, color_white )
+					local tr_type = GetConVar( mode .. "_tr_type" ):GetString()
+					local curved, linear = ( tr_type == "curved_rope" ), ( tr_type == "linear_rope" )
 
-				TrCurSettForm.Header:SetImage( "icon16/arrow_turn_right.png" )
-				TrCurSettForm:Hide()
-
-				local offXSlider = TrCurSettForm:NumSlider("Arc radius", mode .. "_tr_curved_offx", 40, 2000, 2)
-					TrCurSettForm:ControlHelp( "Increase this to straighten the travel path." )
-
-				local offYSlider = TrCurSettForm:NumSlider("Anchor spacing", mode .. "_tr_curved_offy", 40, 2000, 2)
-					TrCurSettForm:ControlHelp( "Set this to the same as Arc radius for best stability." )
-					offYSlider:SetTooltip( "This is equal to half the distance between the vehicle base anchor points of the two ropes" )
-
-				local stabilityButton = vgui.Create( "DButton" )
-					TrCurSettForm:AddItem( stabilityButton )
-					stabilityButton:SetText( "Stabilize" )
-					stabilityButton:DockMargin( 32, 0, 32, 8 )
-					stabilityButton:GetParent():DockPadding( 0, 8, 0, 8 )
-					function stabilityButton:DoClick()
-						local val = offXSlider.Scratch:GetFloatValue()
-						offYSlider.Scratch:SetValue( val )
-						offYSlider:ValueChanged( val )
+					for i, panel in ipairs( travelForm:GetChildren() ) do
+						if i > 3 then
+							panel:SetVisible(
+								( i <= travelCurvedLastIndex and curved )
+								or ( i > travelCurvedLastIndex and linear )
+							)
+						end
+						if i >= travelLinearLastIndex then break end
 					end
 
-			TrLinSettForm = travelCTab:Form( "Linear travel settings", color_blue, color_white )
-
-				TrLinSettForm.Header:SetImage( "icon16/arrow_up.png" )
-				TrLinSettForm:Hide()
-
-				TrLinSettForm:Help( "Note that the rope sliders used for linear travel have an extension limit, and act as elastics." )
-
-				TrLinSettForm:NumSlider( "Rope count", mode .. "_tr_linear_rope_count", 3, 4, 0 )
-					TrLinSettForm:ControlHelp( "How many ropes are created for the slider. Low count reduces lag and diminishes the problems stated at the top. If you're not sure, set to 3." )
-
-				TrLinSettForm:NumSlider( "Rope length", mode .. "_tr_linear_rope_length", 10, 16000, 0 )
-					TrLinSettForm:ControlHelp( "How long each of the slider's rope is. Greater rope length will diminish the problems stated at the top. If you're not sure, set to 5000. Keep below 16000.\n" )
-
-			travelTypeComboBox:OnSelect( nil, travelTypeComboBox:GetSelected() )
-
-			local extSettForm
-			local extLimCheckBox = travelCTab:CheckBox( "Limit travel distances", mode .. "_limitrope_enabled" )
-
-				extLimCheckBox:DockMargin( 0, 32, 0, 0 )
-
-				function extLimCheckBox:OnChange( bVal ) -- called twice for some reason. might be cause of instant hiding
-					if extSettForm:IsEnabled() == bVal then return end
-					CatSetActive( extSettForm, bVal )
+					travelForm:InvalidateChildren( true )
 				end
 
-				travelCTab:ControlHelp( "Enable this to control how far the suspension can extend. Adds a single rope." )
 
-			extSettForm = travelCTab:Form( "Extension limits", color_blue, color_white )
+			local offXSlider = travelForm:NumSlider("Arc radius", mode .. "_tr_curved_offx", 40, 2000, 2)
+			travelForm:ControlHelp( "Increase this to straighten the travel path." )
 
-				extSettForm.Header:SetImage( "icon16/control_equalizer_blue.png" )
-				extSettForm:Hide()
+			local offYSlider = travelForm:NumSlider("Anchor spacing", mode .. "_tr_curved_offy", 40, 2000, 2)
+				offYSlider:SetTooltip( "This is equal to half the distance between the vehicle base anchor points of the two ropes" )
+			travelForm:ControlHelp( "Set this to the same as Arc radius for best stability." )
 
-				extSettForm:Help( "Note that the created rope can sometimes 'paralyze' the suspension, making your vehicle tilted on one side." )
+			local stabilityButton = vgui.Create( "DButton" )
+				travelForm:AddItem( stabilityButton )
+				stabilityButton:SetText( "Stabilize" )
+				stabilityButton:DockMargin( 32, 0, 32, 8 )
+				stabilityButton:GetParent():DockPadding( 0, 8, 0, 8 )
+				function stabilityButton:DoClick()
+					local val = offXSlider.Scratch:GetFloatValue()
+					offYSlider.Scratch:SetValue( val )
+					offYSlider:ValueChanged( val )
+				end
 
-				extSettForm:NumSlider("Bump travel", mode .. "_limitrope_upper_dist", 0, 200, 2)
-					extSettForm:ControlHelp("How far the suspension can extend upwards from its resting position.")
+			travelCurvedLastIndex = #travelForm:GetChildren()
 
-				extSettForm:NumSlider("Droop travel", mode .. "_limitrope_lower_dist", 0, 200, 2)
-					extSettForm:ControlHelp("How far the suspension can extend downwards from its resting position.")
+
+			travelForm:Help( "Note that the rope sliders used for linear travel have an extension limit, and act as elastics." )
+
+			travelForm:NumSlider( "Rope count", mode .. "_tr_linear_rope_count", 3, 4, 0 )
+			travelForm:ControlHelp( "How many ropes are created for the slider. Low count reduces lag and diminishes the problems stated above. If you're not sure, set to 3." )
+
+			travelForm:NumSlider( "Rope length", mode .. "_tr_linear_rope_length", 10, 16000, 0 )
+			travelForm:ControlHelp( "How long each of the slider's rope is. Greater rope length will diminish the problems stated above. If you're not sure, set to 5000. Keep below 16000.\n" )
+
+			travelLinearLastIndex = #travelForm:GetChildren()
+
+
+			local extLimCheckBox = travelForm:CheckBox( "Limit travel distances", mode .. "_limitrope_enabled" )
+
+				extLimCheckBox:DockMargin( 0, 24, 0, 0 )
+
+				function extLimCheckBox:OnChange( bVal ) -- called twice for some reason. might be cause of instant hiding
+					for i, panel in ipairs( travelForm:GetChildren() ) do
+						if i > travelLinearLastIndex + 2 then
+							panel:SetVisible( bVal )
+						end
+						travelForm:InvalidateChildren( true )
+					end
+				end
+
+			travelForm:ControlHelp( "Enable this to control how far the suspension can extend. Adds a single rope." )
+
+			travelForm:Help( "Note that the created rope can sometimes 'paralyze' the suspension, making your vehicle tilted on one side." )
+
+			travelForm:NumSlider("Bump travel", mode .. "_limitrope_upper_dist", 0, 200, 2)
+			travelForm:ControlHelp("How far the suspension can extend upwards from its resting position.")
+
+			travelForm:NumSlider("Droop travel", mode .. "_limitrope_lower_dist", 0, 200, 2)
+			travelForm:ControlHelp("How far the suspension can extend downwards from its resting position.")
 
 			extLimCheckBox:OnChange( extLimCheckBox:GetChecked() )
 
 		local rotForm = createSheet( "Rotation", "icon16/cd.png", nil, false, false, "Manage the rotational degrees of freedom of the wheel." )
-		-- local RotCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
-
-		-- 	propertySheet:AddSheet( "Rotation", RotCTab, "icon16/cd.png", false, false, "Manage the rotational degrees of freedom of the wheel." )
 
 			rotForm:Help( "Steering options and more are available here." )
 
-			local aBSPanels		= {}
+			local aBSPanels
 
 			local rotMethodComboBox = rotForm:ComboBox( "Rotation method:", mode .. "_rot_method" )
 				rotMethodComboBox:SetSortItems( false )
@@ -1131,7 +1122,10 @@ if CLIENT then
 					"abs"
 				)
 
-				local function updateRotFormPanels()
+
+				local oldRotMethodComboBoxSetValue = rotMethodComboBox.SetValue
+				function rotMethodComboBox.SetValue( ... )
+					oldRotMethodComboBoxSetValue( ... )
 
 					local rot_method = GetConVar( mode .. "_rot_method" ):GetString()
 					local rot_rope_enabled, abs_enabled = ( rot_method == "rot_rope" ), ( rot_method == "abs" )
@@ -1146,23 +1140,16 @@ if CLIENT then
 					end
 
 					rotForm:InvalidateChildren( true )
-
-				end
-
-				local oldRotMethodComboBoxSetValue = rotMethodComboBox.SetValue
-				function rotMethodComboBox.SetValue( ... )
-					oldRotMethodComboBoxSetValue( ... )
-					updateRotFormPanels()
 				end
 
 				rotForm:ControlHelp( "Note that the base GMod Duplicator won't recreate advanced ballsockets properly most of the time." )
 
 				local ABSSliders = {}
-					local function updateABSSliders( ... )
-						for i, val in ipairs( { ... } ) do
-							ABSSliders[ i ]:SetValue( val )
-						end
+				local function updateABSSliders( ... )
+					for i, val in ipairs( { ... } ) do
+						ABSSliders[ i ]:SetValue( val )
 					end
+				end
 
 				local aBSPresets = rotForm:ComboBox( "Rotation presets:" )
 					aBSPresets:SetSortItems( false )
@@ -1223,13 +1210,8 @@ if CLIENT then
 
 			rotForm:ControlHelp( "This value is used only if you choose 'Spin and steer'.")
 
-			-- TODO: check if this is necessary
-			updateRotFormPanels()
-
 
 		local powForm = createSheet( "Power", "icon16/cd.png", nil, false, false, "Options to power steering" )
-		-- vgui.Create( "smart_suspension_control_tab", propertySheet )
-		-- 	propertySheet:AddSheet( "Power", PowCTab, "icon16/cd.png", false, false, "Options to power steering." )
 
 
 		local visualCTab = vgui.Create( "smart_suspension_control_tab", propertySheet )
